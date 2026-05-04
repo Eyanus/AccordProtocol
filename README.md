@@ -14,7 +14,7 @@ Current focus: make the repo easy for contributors to understand and extend, the
 This repository is intentionally in a **prototype phase**:
 
 - Frontend uses **dummy data** (mock proposals, owners, and stats)
-- Contract exists as **starter Soroban scaffold** (`hello-world`)
+- Contract exists as **starter Soroban scaffold** (`quorum`)
 - Architecture and folders are prepared for open-source contributions
 - No production funds or security assumptions should be made yet
 
@@ -38,7 +38,7 @@ Quorum aims to become a Stellar-native multisig governance primitive where:
 ### Now (in repo)
 
 - **Frontend (React + TypeScript + Tailwind + Vite)** with modular components and mock state
-- **Soroban contract scaffold** in `contracts/hello-world`
+- **Soroban contract scaffold** in `contracts/quorum`
 - **Rust workspace** configured for multiple contracts
 
 ### Next (contributor milestones)
@@ -56,7 +56,7 @@ Quorum aims to become a Stellar-native multisig governance primitive where:
 quorum-protocol/
 ├── Cargo.toml                         # Rust workspace config
 ├── contracts/
-│   └── hello-world/
+│   └── quorum/
 │       ├── Cargo.toml                 # Soroban contract package
 │       ├── Makefile                   # build/test helpers
 │       └── src/
@@ -107,7 +107,7 @@ If you open a PR:
 ```bash
 # Rust toolchain
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32v1-none
 
 # Stellar CLI
 cargo install --locked stellar-cli --features opt
@@ -159,7 +159,7 @@ Quorum is designed for reward-based collaboration via [Stellar Drips Wave](https
 
 - [x] Repository structure aligned for open-source contributions
 - [x] Frontend modularized with dummy data source
-- [ ] Replace `hello-world` with `multisig` contract module
+- [ ] Evolve `quorum` crate into full `multisig` contract module (or split crate as needed)
 - [ ] Implement proposal lifecycle on Soroban
 - [ ] Integrate wallet + contract calls in frontend
 - [ ] Add integration tests (proposal lifecycle + threshold execution)

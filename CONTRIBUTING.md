@@ -59,7 +59,7 @@ Small, focused PRs are easier to review and merge than large refactors bundled w
 |------|---------|
 | **Git** | Version control |
 | **Node.js** (LTS recommended) | Frontend (`frontend/`) |
-| **Rust** + `wasm32-unknown-unknown` | Soroban contracts |
+| **Rust** + `wasm32v1-none` (Soroban WASM target) | Soroban contracts |
 | **Stellar CLI** (`stellar`) | Build and test contracts from the repo root |
 
 ### Rust and Soroban
@@ -68,8 +68,8 @@ Small, focused PRs are easier to review and merge than large refactors bundled w
 # Install Rust (if needed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# WASM target for Soroban
-rustup target add wasm32-unknown-unknown
+# WASM target for Soroban (see Stellar CLI / Soroban docs if this changes)
+rustup target add wasm32v1-none
 ```
 
 Install the Stellar CLI as described in the [README](./README.md) (or the [official Stellar docs](https://developers.stellar.org/docs/build/smart-contracts/getting-started/setup)).
@@ -96,6 +96,81 @@ npm run build   # Typecheck + production build
 npm run lint    # ESLint
 ```
 
+### Testnet XLM and your deployer account (no browser wallet required)
+
+On Stellar, transactions (including contract deploy) pay a **small fee in XLM**. On **testnet**, that XLM is **free play money** with no real value. You do **not** need Freighter or another browser extension to deploy from the CLI: you only need a **keypair** (an “identity” in Stellar CLI) that holds a little **testnet XLM**.
+
+**1. Create a local deployer identity (this *is* your “wallet” for the CLI)**
+
+```bash
+stellar keys generate quorum-deployer
+stellar keys public-key quorum-deployer
+```
+
+The second command prints your **public key** (starts with `G…`). That account will pay fees when you pass `--source-account quorum-deployer` to `stellar contract deploy` and similar commands.
+
+**2. Fund it with testnet XLM**
+
+Try the built-in faucet (uses the configured testnet RPC):
+
+```bash
+stellar network use testnet
+stellar keys fund quorum-deployer --network testnet
+```
+
+If that fails or rate-limits, use **Friendbot** in a browser: open  
+`https://friendbot.stellar.org/?addr=YOUR_PUBLIC_KEY_HERE`  
+(paste your `G…` address). You can also create/fund via **[Stellar Lab](https://lab.stellar.org/)** (account / friendbot tools).
+
+**3. Confirm you are on testnet for deploy commands**
+
+```bash
+stellar network use testnet
+# or pass --network testnet on each command
+```
+
+**4. Deploy (fees come from that same identity)**
+
+```bash
+stellar contract deploy \
+  --network testnet \
+  --source-account quorum-deployer \
+  --package quorum
+```
+
+**How this relates to “a wallet”**
+
+| Approach | What pays fees | Typical use |
+|----------|----------------|-------------|
+| **Stellar CLI identity** | The key you generated (`quorum-deployer`) | Building, deploying, `stellar contract invoke` from terminal |
+| **Freighter / other wallet** | Account you unlock in the browser | dApps, signing in the UI (your frontend does not use this yet) |
+
+Keep your **secret key / seed phrase private**. For testnet-only keys, treat them as disposable if they leak, but still avoid committing them to git.
+
+### Explorer shows “Unverified build” — what that means
+
+Explorers (for example [Stellar Lab Contract Explorer](https://lab.stellar.org/smart-contracts/contract-explorer)) can show **build verification** only when a **standard chain of evidence** exists between the WASM on-chain and a **public, automated build** with **GitHub Artifact Attestations**. That process is described in **[SEP-0055: Contract Build Verification](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0055.md)** (discussion: [stellar/stellar-protocol#1573](https://github.com/stellar/stellar-protocol/discussions/1573)).
+
+In short, “verified” in the UI usually requires **all** of the following:
+
+1. **Metadata inside the WASM** (embedded at build time), including at least  
+   `source_repo=github:OWNER/REPO`  
+   and optionally `home_domain=your.domain` (for `stellar.toml` discovery per SEP-1).
+2. A **GitHub Actions** workflow that builds the contract, runs **`actions/attest-build-provenance`**, and publishes an attestation tied to the **same WASM hash** that was deployed.
+3. Deploying the **WASM produced by that pipeline** (not a one-off local build), so the hash on the ledger matches the attested artifact.
+
+If you deploy from your laptop with `stellar contract deploy` and no attestation pipeline, explorers will typically show **unverified** even though your code is public. That is expected: the UI is not saying your contract is malicious; it means **no attested provenance record** was found.
+
+**Practical options**
+
+| Goal | What to do |
+|------|------------|
+| **Green “verified” / Build info in Lab** | Add a SEP-55-style **release workflow** (see SEP-0055 example YAML), use `stellar contract build` with `--meta source_repo=github:${{ github.repository }}` (and optional `--meta home_domain=...`), attest the WASM, then **deploy the CI-built WASM** (or wire deploy into CI). Reusable pattern: [stellar-expert/soroban-build-workflow](https://github.com/stellar-expert/soroban-build-workflow). |
+| **Trust without explorer badge** | Keep the contract **open source**, tag releases, and document the **WASM hash** and commit; reviewers can rebuild and compare hashes manually. |
+| **Embed repo hint only** | You can still pass `--meta` on `stellar contract build` / deploy so the WASM carries `source_repo=...`; explorers may show repo linkage, but **full verification** still depends on GitHub attestations as in SEP-55. |
+
+Stellar’s docs note that even “Build verified” only proves an attested workflow built that WASM — **you still must review the source and logic** before trusting a contract.
+
 ---
 
 ## Repository layout and boundaries
@@ -115,7 +190,7 @@ Understanding where code belongs reduces review churn and merge conflicts.
 ### Contracts (`contracts/`)
 
 - The workspace is defined by the root **`Cargo.toml`** (`members = ["contracts/*"]`).
-- Today the scaffold lives under **`contracts/hello-world/`**. Future multisig work may add **`contracts/multisig/`** (or similar); follow existing patterns in `Cargo.toml` and sibling crates when adding packages.
+- Today the scaffold lives under **`contracts/quorum/`**. Future multisig work may add **`contracts/multisig/`** (or similar); follow existing patterns in `Cargo.toml` and sibling crates when adding packages.
 
 ### Do not commit
 
