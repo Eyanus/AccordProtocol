@@ -93,6 +93,27 @@ fn initialize_sets_owners_and_threshold() {
 }
 
 #[test]
+fn initialize_accepts_maximum_owners() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AccordContract, ());
+    let client = AccordContractClient::new(&env, &contract_id);
+    
+    // Generate exactly 20 unique addresses (MAX_OWNERS)
+    let mut owners = Vec::new(&env);
+    for _ in 0..20 {
+        owners.push_back(Address::generate(&env));
+    }
+    
+    // Initialize should succeed
+    client.initialize(&owners, &1, &0);
+    
+    // Verify all 20 owners were stored
+    let stored_owners = client.get_owners();
+    assert_eq!(stored_owners.len(), 20);
+}
+
+#[test]
 fn initialize_rejects_second_call() {
     let (env, client, owner_a, owner_b, owner_c, _, _) = setup(2);
     let mut owners = Vec::new(&env);
@@ -242,6 +263,38 @@ fn create_proposal_rejects_empty_description() {
             &DEADLINE,
         ),
         Err(Ok(ContractError::EmptyDescription))
+    );
+}
+
+#[test]
+fn description_boundary() {
+    let (env, client, owner_a, _, _, _, token_client) = setup(2);
+    let recipient = Address::generate(&env);
+    
+    // Test exact boundary: 300 characters should succeed
+    let description_300 = "a".repeat(300);
+    let result_300 = client.try_create_proposal(
+        &owner_a,
+        &recipient,
+        &1_000_000_i128,
+        &token_client.address,
+        &str(&env, &description_300),
+        &DEADLINE,
+    );
+    assert!(result_300.is_ok());
+    
+    // Test over boundary: 301 characters should fail
+    let description_301 = "a".repeat(301);
+    assert_eq!(
+        client.try_create_proposal(
+            &owner_a,
+            &recipient,
+            &1_000_000_i128,
+            &token_client.address,
+            &str(&env, &description_301),
+            &DEADLINE,
+        ),
+        Err(Ok(ContractError::DescriptionTooLong))
     );
 }
 
@@ -657,6 +710,64 @@ fn full_lifecycle_2of3() {
 
     let before = token_client.balance(&recipient);
     client.execute(&owner_c, &id);
+    assert_eq!(token_client.balance(&recipient) - before, amount);
+    assert_eq!(
+        client.get_proposal(&id).status,
+        ProposalStatus::Executed
+    );
+}
+
+#[test]
+fn full_lifecycle_1of1() {
+    let env = Env::default();
+    env.mock_all_auths();
+    set_timestamp(&env, NOW);
+
+    let owner = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_client = token::Client::new(&env, &token_id.address());
+    let token_sac = token::StellarAssetClient::new(&env, &token_id.address());
+
+    let contract_id = env.register(AccordContract, ());
+    let client = AccordContractClient::new(&env, &contract_id);
+
+    // Initialize 1-of-1 multisig
+    let mut owners = Vec::new(&env);
+    owners.push_back(owner.clone());
+    client.initialize(&owners, &1, &0);
+
+    // Fund the multisig contract
+    token_sac.mint(&contract_id, &1_000_000_000_000_i128);
+
+    let amount: i128 = 50_000_000;
+
+    // Create proposal
+    let id = client.create_proposal(
+        &owner,
+        &recipient,
+        &amount,
+        &token_client.address,
+        &str(&env, "1-of-1 proposal"),
+        &DEADLINE,
+    );
+    assert_eq!(
+        client.get_proposal(&id).status,
+        ProposalStatus::Pending
+    );
+
+    // Single owner approves - should transition to Ready
+    client.approve(&owner, &id);
+    assert_eq!(
+        client.get_proposal(&id).status,
+        ProposalStatus::Ready
+    );
+
+    // Execute the proposal
+    let before = token_client.balance(&recipient);
+    client.execute(&owner, &id);
     assert_eq!(token_client.balance(&recipient) - before, amount);
     assert_eq!(
         client.get_proposal(&id).status,
