@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { CreateProposalModal } from "./components/CreateProposalModal";
 import { DashboardPage } from "./pages/DashboardPage";
-import { NotFoundPage } from "./pages/NotFoundPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { useContract } from "./hooks/useContract";
@@ -54,10 +53,6 @@ export default function App() {
 
   function shortenAddr(addr: string) {
     return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-  }
-
-  function handleGoHome() {
-    setPage("dashboard");
   }
 
   return (
@@ -164,7 +159,6 @@ export default function App() {
             onApprove={handleApprove}
           />
         ) : (
-          <NotFoundPage onGoHome={handleGoHome} />
           <SettingsPage stats={stats} />
         )}
       </main>
