@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CreateProposalModal } from "./components/CreateProposalModal";
 import { DashboardPage } from "./pages/DashboardPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { useContract } from "./hooks/useContract";
 import { useWallet } from "./hooks/useWallet";
@@ -20,6 +21,7 @@ export default function App() {
   const activeProposals = proposals.filter((p) =>
     ["pending", "ready"].includes(p.status)
   );
+
   const historyProposals = proposals.filter((p) =>
     ["executed", "expired", "revoked"].includes(p.status)
   );
@@ -29,8 +31,10 @@ export default function App() {
       await wallet.connect();
       return;
     }
+
     setTxError(null);
     setTxPending(true);
+
     try {
       await fn();
       refresh();
@@ -49,6 +53,10 @@ export default function App() {
 
   function shortenAddr(addr: string) {
     return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+  }
+
+  function handleGoHome() {
+    setPage("dashboard");
   }
 
   return (
@@ -118,7 +126,10 @@ export default function App() {
             <span>{txError ?? error}</span>
             <button
               type="button"
-              onClick={() => { setTxError(null); refresh(); }}
+              onClick={() => {
+                setTxError(null);
+                refresh();
+              }}
               className="underline hover:text-red-300 ml-4 shrink-0"
             >
               Dismiss
@@ -146,11 +157,13 @@ export default function App() {
             onExecute={handleExecute}
             onCreateProposal={() => setShowCreate(true)}
           />
-        ) : (
+        ) : page === "history" ? (
           <HistoryPage
             historyProposals={historyProposals}
             onApprove={handleApprove}
           />
+        ) : (
+          <NotFoundPage onGoHome={handleGoHome} />
         )}
       </main>
 
