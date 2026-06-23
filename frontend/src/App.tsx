@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { CreateProposalModal } from "./components/CreateProposalModal";
 import { DashboardPage } from "./pages/DashboardPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { useContract } from "./hooks/useContract";
 import { useWallet } from "./hooks/useWallet";
 import { approveProposal, executeProposal } from "./lib/submit";
 
-type Page = "dashboard" | "history";
+type Page = "dashboard" | "history" | "settings";
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -20,6 +22,7 @@ export default function App() {
   const activeProposals = proposals.filter((p) =>
     ["pending", "ready"].includes(p.status)
   );
+
   const historyProposals = proposals.filter((p) =>
     ["executed", "expired", "revoked"].includes(p.status)
   );
@@ -29,8 +32,10 @@ export default function App() {
       await wallet.connect();
       return;
     }
+
     setTxError(null);
     setTxPending(true);
+
     try {
       await fn();
       refresh();
@@ -51,6 +56,10 @@ export default function App() {
     return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
   }
 
+  function handleGoHome() {
+    setPage("dashboard");
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <header className="border-b border-zinc-800 px-6 py-4">
@@ -66,7 +75,7 @@ export default function App() {
           </div>
 
           <nav className="flex items-center gap-1">
-            {(["dashboard", "history"] as Page[]).map((navPage) => (
+            {(["dashboard", "history", "settings"] as Page[]).map((navPage) => (
               <button
                 key={navPage}
                 type="button"
@@ -118,7 +127,10 @@ export default function App() {
             <span>{txError ?? error}</span>
             <button
               type="button"
-              onClick={() => { setTxError(null); refresh(); }}
+              onClick={() => {
+                setTxError(null);
+                refresh();
+              }}
               className="underline hover:text-red-300 ml-4 shrink-0"
             >
               Dismiss
@@ -146,11 +158,14 @@ export default function App() {
             onExecute={handleExecute}
             onCreateProposal={() => setShowCreate(true)}
           />
-        ) : (
+        ) : page === "history" ? (
           <HistoryPage
             historyProposals={historyProposals}
             onApprove={handleApprove}
           />
+        ) : (
+          <NotFoundPage onGoHome={handleGoHome} />
+          <SettingsPage stats={stats} />
         )}
       </main>
 

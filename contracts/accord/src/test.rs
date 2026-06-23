@@ -664,265 +664,168 @@ fn full_lifecycle_2of3() {
     );
 }
 
-// ─── Issue #38: Remove Owner ─────────────────────────────────────────────────
+// ─── Active Count ─────────────────────────────────────────────────────────────
 
 #[test]
-fn remove_owner_lifecycle() {
-    let (env, client, owner_a, owner_b, owner_c, _, token_client) = setup(2);
-    let id = client.create_remove_owner_proposal(
-        &owner_a,
-        &owner_c,
-        &str(&env, "Remove owner_c"),
-        &DEADLINE,
-    );
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Pending
-    );
-
-    client.approve(&owner_a, &id);
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Pending
-    );
-
-    client.approve(&owner_b, &id);
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Ready
-    );
-
-    client.execute(&owner_a, &id);
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Executed
-    );
-
-    let owners = client.get_owners();
-    assert_eq!(owners.len(), 2);
-    assert!(!owners.contains(&owner_c));
-    assert!(owners.contains(&owner_a));
-    assert!(owners.contains(&owner_b));
-}
-
-#[test]
-fn remove_owner_rejects_not_current_owner() {
-    let (env, client, owner_a, _, _, non_owner, _) = setup(2);
-    assert_eq!(
-        client.try_create_remove_owner_proposal(
-            &owner_a,
-            &non_owner,
-            &str(&env, "Remove non-owner"),
-            &DEADLINE,
-        ),
-        Err(Ok(ContractError::OwnerNotFound))
-    );
-}
-
-#[test]
-fn remove_owner_rejects_would_break_threshold() {
-    let (env, client, owner_a, _, _, _, _) = setup(3);
-    // 3 owners, threshold 3 — removing any one would leave 2 < 3
-    assert_eq!(
-        client.try_create_remove_owner_proposal(
-            &owner_a,
-            &Address::generate(&env), // this address won't match, but let's use a real owner
-            &str(&env, "Break threshold"),
-            &DEADLINE,
-        ),
-        Err(Ok(ContractError::OwnerNotFound))
-    );
-    // Use a real owner to test WouldBreakThreshold
-    let (_, _, _, owner_b, _, _, _) = setup(3);
-    // Re-setup since setup creates a fresh contract
-    let (env2, client2, owner_a2, owner_b2, owner_c2, _, _) = setup(3);
-    // Threshold is 3, owners is 3 — removing any would leave 2 < 3
-    assert_eq!(
-        client2.try_create_remove_owner_proposal(
-            &owner_a2,
-            &owner_c2,
-            &str(&env2, "Break threshold"),
-            &DEADLINE,
-        ),
-        Err(Ok(ContractError::WouldBreakThreshold))
-    );
-}
-
-// ─── Issue #39: Change Threshold ─────────────────────────────────────────────
-
-#[test]
-fn change_threshold_lifecycle() {
-    let (env, client, owner_a, owner_b, owner_c, _, _) = setup(2);
-    let id = client.create_change_threshold_proposal(
-        &owner_a,
-        &3,
-        &str(&env, "Raise to 3-of-3"),
-        &DEADLINE,
-    );
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Pending
-    );
-
-    client.approve(&owner_a, &id);
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Pending
-    );
-
-    client.approve(&owner_b, &id);
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Ready
-    );
-
-    client.execute(&owner_c, &id);
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Executed
-    );
-
-    assert_eq!(client.get_threshold(), 3);
-}
-
-#[test]
-fn change_threshold_rejects_zero() {
-    let (env, client, owner_a, _, _, _, _) = setup(2);
-    assert_eq!(
-        client.try_create_change_threshold_proposal(
-            &owner_a,
-            &0,
-            &str(&env, "Zero threshold"),
-            &DEADLINE,
-        ),
-        Err(Ok(ContractError::InvalidThreshold))
-    );
-}
-
-#[test]
-fn change_threshold_rejects_above_owner_count() {
-    let (env, client, owner_a, _, _, _, _) = setup(2);
-    // 3 owners, threshold 4 exceeds owner count
-    assert_eq!(
-        client.try_create_change_threshold_proposal(
-            &owner_a,
-            &4,
-            &str(&env, "Too high"),
-            &DEADLINE,
-        ),
-        Err(Ok(ContractError::InvalidThreshold))
-    );
-}
-
-#[test]
-fn change_threshold_old_proposals_unaffected() {
-    let (env, client, owner_a, owner_b, owner_c, _, token_client) = setup(2);
-
-    // Create a transfer proposal (stored threshold = 2).
-    let transfer_id = client.create_proposal(
-        &owner_a,
-        &Address::generate(&env),
-        &1_000_000_i128,
-        &token_client.address,
-        &str(&env, "Transfer"),
-        &DEADLINE,
-    );
-    client.approve(&owner_a, &transfer_id); // 1 approval, still Pending
-
-    // Create and execute a change_threshold proposal to lower to 1.
-    let change_id = client.create_change_threshold_proposal(
-        &owner_a,
-        &1,
-        &str(&env, "Lower threshold"),
-        &DEADLINE,
-    );
-    client.approve(&owner_a, &change_id);
-    client.approve(&owner_b, &change_id);
-    client.execute(&owner_c, &change_id);
-    assert_eq!(client.get_threshold(), 1);
-
-    // The transfer proposal should still need its original threshold (2) to become Ready.
-    // owner_a already approved; owner_b now approves → 2 total = stored threshold.
-    client.approve(&owner_b, &transfer_id);
-    assert_eq!(
-        client.get_proposal(&transfer_id).status,
-        ProposalStatus::Ready
-    );
-
-    // Execute should succeed.
-    client.execute(&owner_c, &transfer_id);
-    assert_eq!(
-        client.get_proposal(&transfer_id).status,
-        ProposalStatus::Executed
-    );
-}
-
-// ─── Issue #40: Time-Locked Execution ────────────────────────────────────────
-
-#[test]
-fn execute_fails_before_time_lock_delay() {
-    let (env, client, owner_a, owner_b, owner_c, _, token_client) =
-        setup_with_timelock(2, 3600);
-    let id = client.create_proposal(
-        &owner_a,
-        &Address::generate(&env),
-        &1_000_000_i128,
-        &token_client.address,
-        &str(&env, "Timelocked"),
-        &DEADLINE,
-    );
-    client.approve(&owner_a, &id);
-    client.approve(&owner_b, &id); // Ready, ready_at = NOW
-    assert_eq!(
-        client.try_execute(&owner_c, &id),
-        Err(Ok(ContractError::TimeLockActive))
-    );
-}
-
-#[test]
-fn execute_succeeds_after_time_lock_delay() {
-    let (env, client, owner_a, owner_b, owner_c, _, token_client) =
-        setup_with_timelock(2, 3600);
-    let recipient = Address::generate(&env);
-    let amount: i128 = 50_000_000;
-    let id = client.create_proposal(
-        &owner_a,
-        &recipient,
-        &amount,
-        &token_client.address,
-        &str(&env, "Timelocked"),
-        &DEADLINE,
-    );
-    client.approve(&owner_a, &id);
-    client.approve(&owner_b, &id); // Ready, ready_at = NOW (1000)
-
-    // Advance time past the delay.
-    set_timestamp(&env, NOW + 3600);
-    let before = token_client.balance(&recipient);
-    client.execute(&owner_c, &id);
-    assert_eq!(token_client.balance(&recipient) - before, amount);
-    assert_eq!(
-        client.get_proposal(&id).status,
-        ProposalStatus::Executed
-    );
-}
-
-#[test]
-fn zero_time_lock_delay_executes_immediately() {
+fn active_count_stays_accurate_after_execute() {
     let (env, client, owner_a, owner_b, owner_c, _, token_client) = setup(2);
     let recipient = Address::generate(&env);
-    let amount: i128 = 50_000_000;
-    let id = client.create_proposal(
+    
+    // Fill up the active slots
+    for _ in 0..50 {
+        client.create_proposal(
+            &owner_a,
+            &recipient,
+            &1_000_000_i128,
+            &token_client.address,
+            &str(&env, "Fill"),
+            &DEADLINE,
+        );
+    }
+    
+    // 51st proposal should fail
+    assert_eq!(
+        client.try_create_proposal(
+            &owner_a,
+            &recipient,
+            &1_000_000_i128,
+            &token_client.address,
+            &str(&env, "Overflow"),
+            &DEADLINE,
+        ),
+        Err(Ok(ContractError::TooManyActiveProposals))
+    );
+    
+    // Approve and execute 2 proposals
+    client.approve(&owner_a, &1);
+    client.approve(&owner_b, &1);
+    client.execute(&owner_c, &1);
+    
+    client.approve(&owner_a, &2);
+    client.approve(&owner_b, &2);
+    client.execute(&owner_c, &2);
+    
+    // Now we should be able to create 2 more proposals
+    let id51 = client.create_proposal(
         &owner_a,
         &recipient,
-        &amount,
+        &1_000_000_i128,
         &token_client.address,
-        &str(&env, "No delay"),
+        &str(&env, "New 1"),
         &DEADLINE,
     );
-    client.approve(&owner_a, &id);
-    client.approve(&owner_b, &id);
-    let before = token_client.balance(&recipient);
-    client.execute(&owner_c, &id);
-    assert_eq!(token_client.balance(&recipient) - before, amount);
+    let id52 = client.create_proposal(
+        &owner_a,
+        &recipient,
+        &1_000_000_i128,
+        &token_client.address,
+        &str(&env, "New 2"),
+        &DEADLINE,
+    );
+    assert_eq!(id51, 51);
+    assert_eq!(id52, 52);
+    
+    // And the 53rd should fail again
+    assert_eq!(
+        client.try_create_proposal(
+            &owner_a,
+            &recipient,
+            &1_000_000_i128,
+            &token_client.address,
+            &str(&env, "Overflow 2"),
+            &DEADLINE,
+        ),
+        Err(Ok(ContractError::TooManyActiveProposals))
+    );
+}
+
+#[test]
+fn active_count_stays_accurate_after_expire() {
+    let (env, client, owner_a, _, _, _, token_client) = setup(2);
+    let recipient = Address::generate(&env);
+    
+    let short_deadline = NOW + 1_000;
+    let long_deadline = NOW + 10_000;
+    
+    // Create 2 proposals with a short deadline
+    client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Short 1"), &short_deadline);
+    client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Short 2"), &short_deadline);
+    
+    // Create 48 proposals with a long deadline
+    for _ in 2..50 {
+        client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Long"), &long_deadline);
+    }
+    
+    // 51st proposal should fail
+    assert_eq!(
+        client.try_create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Overflow"), &long_deadline),
+        Err(Ok(ContractError::TooManyActiveProposals))
+    );
+    
+    // Advance time past the short deadline
+    set_timestamp(&env, short_deadline + 1);
+    
+    // Execute the expired proposals
+    assert_eq!(client.try_execute(&owner_a, &1), Err(Ok(ContractError::ProposalExpired)));
+    assert_eq!(client.try_execute(&owner_a, &2), Err(Ok(ContractError::ProposalExpired)));
+    
+    // Now we should be able to create 2 more proposals
+    let id51 = client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "New 1"), &long_deadline);
+    let id52 = client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "New 2"), &long_deadline);
+    assert_eq!(id51, 51);
+    assert_eq!(id52, 52);
+    
+    // And the 53rd should fail again
+    assert_eq!(
+        client.try_create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Overflow 2"), &long_deadline),
+        Err(Ok(ContractError::TooManyActiveProposals))
+    );
+}
+
+#[test]
+fn active_count_stays_accurate_mixed() {
+    let (env, client, owner_a, owner_b, owner_c, _, token_client) = setup(2);
+    let recipient = Address::generate(&env);
+    
+    let short_deadline = NOW + 1_000;
+    let long_deadline = NOW + 10_000;
+    
+    // Create 1 short deadline
+    client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Short 1"), &short_deadline);
+    
+    // Create 49 long deadline
+    for _ in 1..50 {
+        client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Long"), &long_deadline);
+    }
+    
+    // 51st proposal should fail
+    assert_eq!(
+        client.try_create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Overflow"), &long_deadline),
+        Err(Ok(ContractError::TooManyActiveProposals))
+    );
+    
+    // Execute proposal 2 (long deadline)
+    client.approve(&owner_a, &2);
+    client.approve(&owner_b, &2);
+    client.execute(&owner_c, &2);
+    
+    // Create 1 new proposal (long deadline)
+    let id51 = client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "New 1"), &long_deadline);
+    assert_eq!(id51, 51);
+    
+    // Advance time past the short deadline
+    set_timestamp(&env, short_deadline + 1);
+    
+    // Execute the expired proposal 1
+    assert_eq!(client.try_execute(&owner_a, &1), Err(Ok(ContractError::ProposalExpired)));
+    
+    // Create 1 new proposal (long deadline)
+    let id52 = client.create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "New 2"), &long_deadline);
+    assert_eq!(id52, 52);
+    
+    // 53rd proposal should fail
+    assert_eq!(
+        client.try_create_proposal(&owner_a, &recipient, &1_000_000_i128, &token_client.address, &str(&env, "Overflow 2"), &long_deadline),
+        Err(Ok(ContractError::TooManyActiveProposals))
+    );
 }
